@@ -1,41 +1,44 @@
 require 'csv'
-require 'sunlight/congress'
-require 'erb'
+require 'google/apis/civicinfo_v2'
 
-Sunlight::Congress.api_key = "e179a6973728c4dd3fb1204283aaccb5"
 
 def clean_zipcode(zipcode)
-  zipcode.to_s.rjust(5,"0")[0..4]
-end
-
-def legislators_by_zipcode(zipcode)
-  Sunlight::Congress::Legislator.by_zipcode(zipcode)
-end
-
-def save_thank_you_letters(id,form_letter)
-  Dir.mkdir("output") unless Dir.exists?("output")
-
-  filename = "output/thanks_#{id}.html"
-
-  File.open(filename,'w') do |file|
-    file.puts form_letter
+  if zipcode.nil?
+    "00000"
+  elsif zipcode.length < 5
+    zipcode.rjust(5,"0")
+  elsif zipcode.length > 5
+    zipcode[0..4]
+  else
+    zipcode
   end
+end
+
+def legislators_by_zip_code(zip)
+  return if zip == "00000"
+  puts "Zip: #{zip}"
+  civic_info = Google::Apis::CivicinfoV2::CivicInfoService.new
+  civic_info.key = 'AIzaSyClRzDqDh5MsXwnCWi0kOiiBivP6JsSyBw'
+  legislators = civic_info.representative_info_by_address(
+                              address: zip, 
+                              levels: 'country', 
+                              roles: ['legislatorUpperBody', 'legislatorLowerBody'])
+  
+  legislator_names = legislators.officials.map{ |legislator| legislator.name }
+  
+  legislator_names.join(", ")
 end
 
 puts "EventManager initialized."
 
 contents = CSV.open 'event_attendees.csv', headers: true, header_converters: :symbol
 
-template_letter = File.read "form_letter.erb"
-erb_template = ERB.new template_letter
-
 contents.each do |row|
-  id = row[0]
   name = row[:first_name]
+
   zipcode = clean_zipcode(row[:zipcode])
-  legislators = legislators_by_zipcode(zipcode)
 
-  form_letter = erb_template.result(binding)
+  legislators = legislators_by_zip_code(zipcode)
 
-  save_thank_you_letters(id,form_letter)
+  puts "#{name} #{zipcode} #{legislators}"
 end
